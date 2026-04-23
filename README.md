@@ -4,7 +4,76 @@
 
 This repo contains the analysis and the reusable CLI that answers that question for any Bluesky feed. The example analysis here uses the [realnsfw.social curated feed](https://bsky.app/profile/realnsfw.social/feed/aaabgjszdhpyk).
 
-> **Motivation.** Bluesky recently shipped a swipe-carousel view for multi-photo posts, replacing the old grid layout. This analysis tests whether multi-photo posts underperformed single-photo posts **in the old grid era** (when most of the sample was viewed). It's a pre-layout-change baseline.
+---
+
+## Abstract
+
+Bluesky recently replaced its static multi-photo **grid layout** with a **swipe-carousel** view for posts with more than one image. This analysis establishes a **pre-carousel baseline** by measuring how engagement differs between 1-, 2-, 3-, and 4-photo posts on a curated Bluesky feed (realnsfw.social, n = 22,000 image posts from 1,014 authors, indexed between 2026-02-16 and 2026-04-22).
+
+Using non-parametric tests (Mann-Whitney U, Kruskal-Wallis, Spearman), a negative-binomial multivariate regression, and within-author paired tests to rule out common confounds, the core finding is clear: **4-image posts received roughly 45% fewer likes than 1-image posts** (median 12 vs 21, mean 28.6 vs 51.7; Cliff's *d* = +0.20, small effect). This effect holds after controlling for follower count, posting hour, alt-text use, and caption length. The 1-vs-2 and 1-vs-3 differences are not meaningful. 2-image posts have the highest median typical engagement; 1-image has the highest viral upside.
+
+One moderator stands out: **the 4-image penalty is entirely absent when the caption is 50–150 characters** (Mann-Whitney *p* = 0.75). The penalty concentrates in "photo dump with a short or empty caption" posts. Since this baseline was captured under the grid layout, the results are best interpreted as establishing a **pre-change benchmark** for a future post-carousel comparison.
+
+---
+
+## Methodology
+
+### Data source
+
+Posts were collected by paginating the public `app.bsky.feed.getFeed` XRPC endpoint on `public.api.bsky.app`. 58,415 feed items were fetched in total and filtered down to 22,000 posts that met three criteria:
+
+1. `image_count >= 1` (post contains at least one image embed)
+2. `indexedAt < 2026-04-23T00:00:00Z` (cutoff chosen to exclude the most recent 24 hours of noisy engagement data, and to standardize the dataset to a fixed UTC boundary)
+3. De-duplicated by post URI
+
+Image metadata, alt-text, and aspect ratios were back-filled for each post via `app.bsky.feed.getPosts`. Author follower counts were back-filled once at analysis time via `app.bsky.actor.getProfiles`. No authentication required — the entire pipeline uses Bluesky's public AT Protocol surface.
+
+### Variables
+
+For each post we record:
+- **Engagement metrics:** `likeCount`, `repostCount`, `replyCount`, `quoteCount`, and their sum (`total_engagement`).
+- **Post features:** `image_count` (1–4), primary image aspect ratio (landscape/portrait/square), caption length, any-alt-text flag, indexed hour (UTC), day of week.
+- **Author features:** handle, DID, follower count (snapshot at analysis time), post count in this sample, within-author median likes.
+
+### Statistical tests
+
+| Purpose | Test | Why |
+|---|---|---|
+| Compare two groups (1 vs 2+, or 1 vs N) | Mann-Whitney U | Non-parametric; robust to heavy-tailed engagement distributions |
+| Effect size for two-group comparison | Cliff's *d* / rank-biserial *r* | Interpretable as rank-probability; no distributional assumptions |
+| Compare four groups (1 / 2 / 3 / 4 imgs) | Kruskal-Wallis | Non-parametric omnibus across all counts |
+| Pairwise post-hoc with correction | Holm-Bonferroni | Controls family-wise error rate across the six pairwise tests |
+| Monotonic trend | Spearman correlation | Rank-based, captures non-linear monotonic relationships |
+| Controlling for multiple covariates at once | Negative binomial GLM | Proper for count data like likes (Poisson is rejected due to overdispersion) |
+| Confidence intervals | Bootstrap (5,000 resamples) | No distributional assumptions |
+| Author-selection confound | Paired Wilcoxon signed-rank | Within-author comparison eliminates all time-invariant author attributes as confounds |
+| Time-of-day confound | Stouffer's combined *z* | Aggregates per-hour Mann-Whitney z-scores into one overall test |
+
+**Significance thresholds.** `***` *p* < 0.001 · `**` *p* < 0.01 · `*` *p* < 0.05 · `ns` = not significant.
+**Effect-size thresholds (Cliff's *d*):** < 0.1 negligible · 0.1–0.3 small · 0.3–0.5 medium · > 0.5 large.
+
+### Reproducibility
+
+The complete pipeline (collection, filtering, stats, chart rendering, dashboard generation) lives in `analyze_feed.py`. Point it at any Bluesky feed URL and it regenerates the full analysis:
+
+```bash
+git clone https://github.com/sweetbeex/bsky-photo-number-analyses
+cd bsky-photo-number-analyses
+pip install -r requirements.txt
+python analyze_feed.py "https://bsky.app/profile/YOUR_HANDLE/feed/YOUR_RKEY" \
+  --target 20000 \
+  --output ./my-analysis
+```
+
+Outputs: `feed_engagement.csv`, `all_stats.json`, SVG charts, and a standalone `dashboard.html`.
+
+### Sample
+
+- **22,000 image posts** · **1,014 unique authors** · spanning **2026-02-16 → 2026-04-22**
+- **Cutoff:** posts indexed strictly before `2026-04-23T00:00:00Z`
+- Breakdown by image count: **18,897** 1-img · **2,080** 2-img · **550** 3-img · **473** 4-img
+
+---
 
 ## TL;DR
 
@@ -21,39 +90,7 @@ This repo contains the analysis and the reusable CLI that answers that question 
 | 4-img drop vanishes in posts with 50–150-char captions | p = 0.75 (**ns**) at that length | d = −0.02 | "4 photos + short caption" is the actual bad combo, not 4 photos per se. |
 | Portrait images outperform landscape/square | Kruskal p = 1.5e-121 (**\*\*\***) | — | Highly significant across all 22,000 posts. |
 
-**Significance key:** `***` p<0.001 · `**` p<0.01 · `*` p<0.05 · `ns` = not significant. **Effect size (Cliff's d):** <0.1 negligible · 0.1–0.3 small · 0.3–0.5 medium · >0.5 large.
-
 ---
-
-## What's in this repo
-
-- **`analyze_feed.py`** — reusable CLI. Point it at any Bluesky feed URL, it does the whole collection + analysis.
-- **`charts/`** — all SVG charts embedded in this README (generated by the script).
-- **`data/feed_engagement_full.csv`** — the full 22,000-row dataset (including per-post text length, follower count, alt-text count, etc).
-- **`data/all_stats.json`** — every statistical test result in structured form.
-- **`dashboard/index.html`** — interactive Chart.js version of this report (deployable to GitHub Pages).
-- **`requirements.txt`** — Python dependencies.
-
-## Run it on your own feed
-
-```bash
-git clone https://github.com/sweetbeex/bsky-photo-number-analyses
-cd bsky-photo-number-analyses
-pip install -r requirements.txt
-python analyze_feed.py "https://bsky.app/profile/YOUR_HANDLE/feed/YOUR_RKEY" \
-  --target 20000 \
-  --output ./my-analysis
-```
-
-Outputs: `feed_engagement.csv`, `all_stats.json`, PNG charts, and a standalone `dashboard.html`.
-
----
-
-## Sample
-
-- **22,000 image posts** · **1,014 unique authors** · spanning **2026-02-16 → 2026-04-22**
-- **Cutoff:** posts indexed strictly before `2026-04-23T00:00:00Z`
-- Breakdown by image count: **18,897** 1-img · **2,080** 2-img · **550** 3-img · **473** 4-img
 
 ## Part 1 — Per-image-count means and medians
 
@@ -247,8 +284,6 @@ The most important single chart. This answers: **what's the marginal effect of e
 
 ### r values summary
 
-Asked "what are the r values?" — here they are, all in one place:
-
 | Correlation | Spearman *r* | Pearson *r* | *p* (Spearman) |
 |---|--:|--:|--:|
 | image_count ↔ likes | +0.006 | −0.032 | 0.39 (**ns**) |
@@ -292,53 +327,67 @@ Rank-biserial *r* (same as Cliff's *d* in the Mann-Whitney case):
 
 ---
 
-## Methodology
+## Conclusion
 
-**Data source.** Paginated `app.bsky.feed.getFeed` XRPC on the public API (`public.api.bsky.app`). 58,415 total feed items fetched; filtered to posts with ≥1 image indexed strictly before `2026-04-23T00:00:00Z`. Text, alt-text, follower counts, and image aspect ratios were backfilled via `app.bsky.feed.getPosts` and `app.bsky.actor.getProfiles`.
+The central hypothesis — that multi-photo posts underperformed single-photo posts under Bluesky's legacy grid layout — is **partially confirmed** by this baseline.
 
-**Statistical tests.**
+- **1 vs 2+ photos** (the broadest framing) is essentially a tie on typical engagement. The slight edge for 1-image posts on means is driven entirely by a longer viral tail, not by a shift in the typical post.
+- **The real signal is at 4 photos.** Four-image grid-layout posts received ~40–45% less engagement across likes, reposts, replies, and total volume — a small-to-medium effect size that survives every confound check we applied.
+- **It's not a blanket "multi-photo is worse" effect.** 2-image posts actually have a *higher* median engagement than 1-image posts; 3-image posts are statistically indistinguishable from 1-image. The penalty is specific to 4-image posts.
+- **Caption length is the most important moderator.** Four-image posts with normal-length captions (50–150 chars) perform identically to 1-image posts. The 4-image engagement loss is concentrated in posts with very short or empty captions — the "photo dump with no context" pattern.
+- **Account size modifies the effect.** Large accounts (≥3,641 followers) and small accounts (≤1,614) both show strong 4-image penalties. Medium accounts don't — an anomaly worth investigating with more data.
+- **Follower count dominates everything else.** The single strongest predictor of engagement in this feed isn't image count, caption, or time of day — it's whether the author has an audience.
 
-| Purpose | Test | Why |
-|---|---|---|
-| Compare 2 groups (1 vs 2+, 1 vs N) | Mann-Whitney U | Non-parametric; robust to the heavy right-tail of engagement distributions |
-| Effect size for 2-group comparison | Cliff's *d* / rank-biserial *r* | Doesn't require equal variance; interprets as rank probability |
-| Compare 4 groups (1 vs 2 vs 3 vs 4) | Kruskal-Wallis | Non-parametric omnibus |
-| Correct pairwise comparisons | Holm-Bonferroni | Controls family-wise error rate |
-| Monotonic trend | Spearman correlation | Rank-based, captures non-linear monotonic relationships |
-| Linear/non-linear controlling for covariates | Negative binomial GLM | Proper for count data (likes are counts, not continuous) |
-| Confidence intervals | Bootstrap (5,000 resamples) | No distributional assumptions |
-| Author confound | Paired Wilcoxon signed-rank | Within-author comparison controls for all time-invariant author attributes |
-| Time-of-day confound | Stouffer's combined z | Aggregates per-hour Mann-Whitney z-scores |
-
-**Significance thresholds.** `***` *p* < 0.001 · `**` *p* < 0.01 · `*` *p* < 0.05 · `ns` = not significant.
-
-**Effect size thresholds (Cliff's *d*):** < 0.1 negligible · 0.1–0.3 small · 0.3–0.5 medium · > 0.5 large.
-
-## Caveats
-
-1. **Context: this measures engagement in the pre-carousel era.** Bluesky recently rolled out a swipe-carousel view for multi-photo posts. This sample was almost entirely produced (and viewed) under the old grid layout. A follow-up analysis after enough post-carousel data accumulates would let us test whether the layout change alters the 4-image penalty.
-2. **Feed selection bias.** This is a curated algorithmic feed — not a global Bluesky snapshot. Results describe this feed's audience and the feed's ranking behavior, not Bluesky as a whole.
-3. **Follower count is a snapshot from 2026-04-23, not from each post's creation date.** Authors' followings shift over time. The Spearman correlations and tier analyses are approximate on this dimension.
-4. **"Account size" refers to follower count.** "Median engagement tier" is a separate, engagement-based grouping used for cross-check.
-5. **No causal claims.** All analyses are observational. The 4-image penalty is consistent across controls but we cannot rule out confounds not measured (e.g., image quality, content subject matter, self-selection by post type).
-6. **3-image (n=550) and 4-image (n=473) groups are smaller.** Tier-within-tier breakdowns on these groups are directional, not definitive.
+As a baseline for comparison once enough post-carousel data accumulates, these results suggest the design intuition behind the swipe carousel is reasonable: the legacy grid layout compressed 4 photos into thumbnail-sized panels that reward quick scrolling past rather than engagement. A swipe-carousel that gives each photo full-frame display could plausibly close the gap — that's the testable prediction this baseline enables.
 
 ---
 
-## Repo contents
+## Limitations
 
-```
-├── README.md                       # this file
-├── analyze_feed.py                 # CLI that does the whole pipeline
-├── requirements.txt                # scipy, numpy, matplotlib, statsmodels, pandas
-├── charts/                         # 18 SVG charts in this README
-├── data/
-│   ├── feed_engagement_full.csv    # 22,000 rows, one per post
-│   └── all_stats.json              # every test result
-├── dashboard/
-│   └── index.html                  # interactive Chart.js version (deploy to GitHub Pages)
-└── .github/workflows/pages.yml     # auto-deploy dashboard/ to GitHub Pages
-```
+1. **Feed selection bias.** This is a curated algorithmic feed, not a global Bluesky sample. Results describe the authors and content this feed surfaces, not Bluesky as a whole. A different curated feed, a following-based feed, or the full firehose could show different patterns.
+2. **Pre-layout-change only.** The sample was captured almost entirely under Bluesky's legacy grid layout for multi-photo posts. Post-carousel engagement dynamics may differ substantially; these findings cannot be applied directly to the new layout.
+3. **Follower count is a snapshot at analysis time (2026-04-23).** Authors' follower counts change over time. Posts older in the sample are compared against a follower count that reflects later growth, not the follower count at posting time. This introduces a small positive bias for established accounts.
+4. **Observational, not causal.** We rule out common confounds (author identity, time of day, caption length, follower count, alt-text use, aspect ratio), but cannot rule out unmeasured confounds such as image quality, subject matter, selfie vs landscape content, or self-selection by post style.
+5. **3-image and 4-image groups are small.** With *n* = 550 and *n* = 473 respectively, sub-group breakdowns (e.g. 3-img by author tier) are directional, not definitive.
+6. **Quote-post metric is underpowered.** `quoteCount` is very low across the board (median 0, rare non-zero values) so tests involving quotes have limited power to detect effects.
+7. **Viral outliers drive means.** Engagement is heavily right-tailed — a single viral 1-image post can shift the mean several units. We report medians and use rank-based tests to minimize this, but reported means should be read with the distribution's heavy tail in mind.
+8. **Aspect ratio is measured only for the first image** in a multi-photo post. Multi-photo posts can mix orientations; we capture only the primary one.
+
+## Future directions
+
+### Immediate follow-ups
+
+- **Post-carousel replication.** Once 4–8 weeks of post-carousel data exist, rerun this analysis and compare the 1-vs-4 effect size. A reduction in the 4-image penalty would be strong evidence that the layout change is meeting its design goal.
+- **A matched-pairs design across the layout transition.** Among authors who posted 4-image posts both before and after the carousel rollout, test the within-author change. This eliminates the "different authors post under different layouts" confound.
+- **Replicate on a different feed.** The same analysis on a non-NSFW, non-curated feed (e.g. a general photography feed, or a regional feed) would tell us whether the patterns here generalize or are feed-specific.
+- **Fix the follower-count-at-post-time limitation.** The Bluesky PLC history and profile snapshots don't easily expose historical follower counts, but a longitudinal collection pipeline that records follower count at the time of each post would strengthen the follower-tier analysis.
+
+### Deeper analyses
+
+- **Content-based analysis.** Pair this dataset with image embeddings (e.g. CLIP) to control for subject matter. Is the 4-image drop an artifact of what 4-image posts tend to be *about*?
+- **Carousel position effects.** In the new swipe-carousel, the first image gets the most attention. Does carousel-era engagement correlate with the aspect ratio / characteristics of just the first image, rather than the average or max across all images?
+- **Network effects on engagement.** Include follower/following overlap, reciprocal-follow rate, or community-detection features to see whether the image-count penalty differs across network clusters.
+- **Temporal dynamics.** Engagement accumulates over time. This snapshot captures "engagement so far" for each post, but posts from February have had more time to accumulate than posts from April. A survival/hazard analysis that normalizes for post age would tighten the effect-size estimates.
+- **The medium-tier anomaly.** Why do follower-count-medium accounts not show a 4-image penalty when both smaller and larger accounts do? A targeted within-tier investigation (content analysis, author interviews, or a matched-design study) could explain this.
+
+### Product-relevant extensions
+
+- **Audience-fatigue test.** Do authors who frequently post 4-image carousels see their engagement decay faster than authors who post 1-image posts? A repeated-measures design within prolific authors would test this.
+- **Caption template analysis.** Our finding that 50–150-char captions neutralize the 4-image penalty suggests an actionable hypothesis: certain caption styles (questions, callouts, context-setting) rescue multi-photo posts. Cluster captions by type and test the interaction.
+- **Multi-feed roll-up.** Build a small collection of curated feeds across different content domains and run the same analysis. That would tell us whether the 4-image penalty is a broad Bluesky phenomenon or feed-specific.
+
+---
+
+## What's in this repo
+
+- **`README.md`** — this file (abstract + methodology at top, full analysis, conclusion + limitations + future directions at bottom).
+- **`analyze_feed.py`** — reusable CLI. Point it at any Bluesky feed URL, it does the whole collection + analysis.
+- **`charts/`** — all 18 SVG charts embedded in this README (generated by the script).
+- **`data/feed_engagement_full.csv`** — the full 22,000-row dataset (per-post text length, follower count, alt-text count, etc).
+- **`data/all_stats.json`** — every statistical test result in structured form.
+- **`dashboard/index.html`** — interactive Chart.js version of this report (deployable to GitHub Pages).
+- **`requirements.txt`** — Python dependencies.
+- **`.github/workflows/pages.yml`** — auto-deploys the dashboard to GitHub Pages on push.
 
 ## License
 
