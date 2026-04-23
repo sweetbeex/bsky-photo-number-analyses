@@ -2,7 +2,7 @@
 
 **Does posting 1 photo, 2 photos, 3 photos, or 4 photos change how much engagement a Bluesky post gets?**
 
-This repo contains the analysis and the reusable CLI that answers that question for any Bluesky feed. The example analysis here uses the [realnsfw.social curated feed](https://bsky.app/profile/realnsfw.social/feed/aaabgjszdhpyk).
+This repo contains the analysis and the reusable CLI that answers that question for any Bluesky feed. The example analysis here uses the [realnsfw.social "unfiltered" curated feed](https://bsky.app/profile/realnsfw.social/feed/aaabgjszdhpyk).
 
 ---
 
