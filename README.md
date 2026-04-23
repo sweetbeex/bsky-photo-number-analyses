@@ -2,7 +2,7 @@
 
 **Does posting 1 photo, 2 photos, 3 photos, or 4 photos change how much engagement a Bluesky post gets?**
 
-This repo contains the analysis and the reusable CLI that answers that question for any Bluesky feed. The example analysis here uses the [realnsfw.social curated feed](https://bsky.app/profile/realnsfw.social/feed/aaabgjszdhpyk).
+This repo contains the analysis and the reusable CLI that answers that question for any Bluesky feed. The example analysis here uses the [realnsfw.social "unfiltered" feed](https://bsky.app/profile/realnsfw.social/feed/aaabgjszdhpyk).
 
 > **Motivation.** Bluesky recently shipped a swipe-carousel view for multi-photo posts, replacing the old grid layout. This analysis tests whether multi-photo posts underperformed single-photo posts **in the old grid era** (when most of the sample was viewed). It's a pre-layout-change baseline.
 
