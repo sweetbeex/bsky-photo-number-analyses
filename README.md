@@ -85,9 +85,25 @@ The median picture is different from the mean picture. **2-image posts have the 
 
 ### 1 photo vs 4 photos
 
-![1 vs 4](charts/one_vs_four.svg)
+![1 vs 4 — likes](charts/one_vs_four.svg)
 
-**Verdict: real and meaningful penalty.** 4-image posts get ~45% fewer mean likes and ~43% lower median. Cliff's *d* = +0.20 is a **small effect** by conventional thresholds, which given *n* ≈ 19,000 vs 473 is both statistically robust and practically relevant.
+**Verdict: real and meaningful penalty on likes.** 4-image posts get ~45% fewer mean likes and ~43% lower median. Cliff's *d* = +0.20 is a **small effect** by conventional thresholds, which given *n* ≈ 19,000 vs 473 is both statistically robust and practically relevant.
+
+#### 1 vs 4 photos — all engagement metrics
+
+![1 vs 4 all metrics](charts/one_vs_four_all_metrics.svg)
+
+The penalty shows up on every metric **except quotes** (which are rare enough to be noise). Holm-corrected pairwise Mann-Whitney tests, 1-img vs 4-img:
+
+| Metric | 1-img mean | 4-img mean | % drop | *p* (Holm) | Cliff's *d* |
+|---|--:|--:|--:|--:|--:|
+| Likes | 51.67 | 28.64 | −45% | 4.0e-13 (**\*\*\***) | +0.20 (small) |
+| Reposts | 8.06 | 4.76 | −41% | 7.6e-12 (**\*\*\***) | +0.19 (small) |
+| Replies | 2.44 | 1.47 | −40% | 1.5e-5 (**\*\*\***) | +0.12 (small) |
+| Quotes | 0.23 | 0.17 | −27% | 0.84 (**ns**) | +0.02 (negligible) |
+| Total engagement | 62.40 | 35.03 | −44% | 6.5e-13 (**\*\*\***) | +0.20 (small) |
+
+**Consistent direction, consistent magnitude** — 4-image posts lose ~40–45% on likes, reposts, replies, and total engagement. Quotes alone don't differ, but they're rare enough that the test is underpowered to detect the effect.
 
 ### Pairwise heatmap
 
@@ -315,7 +331,7 @@ Rank-biserial *r* (same as Cliff's *d* in the Mann-Whitney case):
 ├── README.md                       # this file
 ├── analyze_feed.py                 # CLI that does the whole pipeline
 ├── requirements.txt                # scipy, numpy, matplotlib, statsmodels, pandas
-├── charts/                         # all 17 SVG charts in this README
+├── charts/                         # 18 SVG charts in this README
 ├── data/
 │   ├── feed_engagement_full.csv    # 22,000 rows, one per post
 │   └── all_stats.json              # every test result
