@@ -1,4 +1,4 @@
-# Bluesky feed engagement — image-count analysis
+# Bluesky post engagement — image-count analysis
 
 **Does posting 1 photo, 2 photos, 3 photos, or 4 photos change how much engagement a Bluesky post gets?**
 
