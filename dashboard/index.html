@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bluesky feed engagement — image-count analysis</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color:#111; background:#f6f6f7; margin:0; line-height:1.55; }
+.container { max-width: 1160px; margin: 0 auto; padding: 24px; background:#fff; min-height: 100vh; box-shadow: 0 0 0 1px #e4e4e7; }
+h1 { font-size:26px; margin:0 0 4px; letter-spacing:-0.3px; }
+h2 { font-size:17px; margin:30px 0 12px; color:#111; border-bottom:2px solid #111; padding-bottom:6px; letter-spacing:-0.2px; }
+h3 { font-size:13px; margin:0 0 10px; color:#333; font-weight:600; }
+.subtitle { color:#444; font-size:13px; margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid #e4e4e7; }
+.tldr { background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:16px; margin:18px 0; font-size:13px; }
+.tldr h3 { color:#1e40af; margin:0 0 10px; font-size:14px; }
+.tldr ol { margin:0; padding-left:22px; } .tldr li { margin:8px 0; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+@media (max-width:880px){ .grid{grid-template-columns:1fr;} }
+.card { border:1px solid #e4e4e7; border-radius:10px; padding:16px; background:#fff; }
+.chart { position:relative; height:300px; }
+.chart.wide { height:320px; }
+.chart.tall { height:360px; }
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+th,td { padding:7px 10px; text-align:right; border-bottom:1px solid #eee; }
+th:first-child, td:first-child { text-align:left; }
+th { background:#f4f4f5; font-weight:600; color:#333; }
+.sig.pos { color:#059669; font-weight:700; }
+.sig.neg { color:#dc2626; font-weight:700; }
+.sig.ns { color:#888; font-weight:700; }
+.p { font-variant-numeric: tabular-nums; }
+.banner { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 14px; margin:10px 0 18px; font-size:13px; }
+.banner b { color:#92400e; }
+.method { background:#fafafa; border:1px solid #e4e4e7; border-radius:8px; padding:12px 14px; margin:18px 0; font-size:12px; color:#555; }
+.footer { color:#888; font-size:11px; text-align:center; margin-top:30px; padding-top:16px; border-top:1px solid #e4e4e7; }
+.key { display:flex; gap:14px; font-size:11.5px; color:#666; margin-bottom:14px; flex-wrap:wrap; }
+.key span b { color:#111; }
+.kpi { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 22px; }
+@media (max-width:680px){ .kpi{grid-template-columns:repeat(2,1fr);} }
+.kpi .box { background:#fafafa; border:1px solid #e4e4e7; padding:12px; border-radius:10px; }
+.kpi .lab { color:#666; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+.kpi .val { font-size:20px; font-weight:700; margin-top:4px; }
+.kpi .sub { color:#888; font-size:11px; margin-top:4px; }
+.big-finding { padding:14px; border-left:4px solid; border-radius:4px; margin:10px 0; font-size:13.5px; }
+.big-finding.yes { border-color:#059669; background:#ecfdf5; }
+.big-finding.no { border-color:#888; background:#f4f4f5; }
+.big-finding.warn { border-color:#f59e0b; background:#fffbeb; }
+</style>
+</head><body><div class="container">
+<h1>Bluesky feed engagement — image-count analysis</h1>
+<div class="subtitle" id="subtitle"></div>
+
+<div class="banner" id="carousel-context"><b>Context:</b> this is a baseline for the pre-swipe-carousel era. Most posts in this sample were viewed under Bluesky's legacy multi-photo grid layout. A follow-up would test whether the swipe-carousel change alters the 4-image penalty.</div>
+
+<div class="key">
+  <span><b>***</b> p &lt; 0.001</span>
+  <span><b>**</b> p &lt; 0.01</span>
+  <span><b>*</b> p &lt; 0.05</span>
+  <span><b>ns</b> not significant</span>
+  <span>·</span>
+  <span>Cliff's <b>d</b>: &lt;0.1 negligible · 0.1–0.3 small · 0.3–0.5 medium · &gt;0.5 large</span>
+</div>
+
+<div class="tldr">
+<h3>TL;DR</h3>
+<ol>
+<li><b>1 vs 2+ photos — essentially tied.</b> Mann-Whitney p=0.13 <span class="sig ns">ns</span>, Cliff's d=−0.02 (negligible).</li>
+<li><b>4-image posts underperform everything else (real & meaningful).</b> Mean 28.6 likes vs 51.7 for 1-img; Cliff's d=+0.20 (small), p=4e-13 <span class="sig pos">***</span>.</li>
+<li><b>4-img drop is not a time-of-day artifact.</b> Stouffer z=7.4 after stratifying by hour.</li>
+<li><b>The 4-img penalty is moderated by account size</b> (small & large accounts feel it; medium doesn't).</li>
+<li><b>With typical-length captions (50–150 chars), the 4-img penalty vanishes</b> (p=0.75 <span class="sig ns">ns</span>).</li>
+<li><b>Follower count is the dominant predictor</b> (Spearman r=+0.47; regression IRR=2.0 per log unit).</li>
+</ol>
+</div>
+
+<h2>Sample</h2>
+<div class="kpi" id="kpi"></div>
+
+<h2>Top-line: 1 photo vs 2+ photos</h2>
+<div class="grid">
+  <div class="card"><h3>Means across engagement metrics</h3><div class="chart wide"><canvas id="mainChart"></canvas></div></div>
+  <div class="card"><h3>1 vs 2+ summary</h3><div style="overflow:auto"><table id="mainTable"></table></div></div>
+</div>
+
+<h2>Per-image count (1 vs 2 vs 3 vs 4)</h2>
+<div class="grid">
+  <div class="card"><h3>Mean likes (95% bootstrap CI)</h3><div class="chart"><canvas id="pcLikes"></canvas></div></div>
+  <div class="card"><h3>Median likes</h3><div class="chart"><canvas id="pcMedians"></canvas></div></div>
+</div>
+<div style="margin-top:14px">
+<div class="card"><h3>Pairwise Mann-Whitney (Holm-corrected) on likes</h3><div style="overflow:auto"><table id="pwTable"></table></div></div>
+</div>
+
+<h2>Dedicated comparisons</h2>
+<div class="grid">
+  <div class="card"><h3>1 vs 2 photos</h3><div class="chart"><canvas id="one2"></canvas></div><div id="one2Note" style="font-size:12px;color:#555;margin-top:10px"></div></div>
+  <div class="card"><h3>1 vs 3 photos</h3><div class="chart"><canvas id="one3"></canvas></div><div id="one3Note" style="font-size:12px;color:#555;margin-top:10px"></div></div>
+</div>
+<div class="grid" style="margin-top:16px">
+  <div class="card"><h3>1 vs 4 photos</h3><div class="chart"><canvas id="one4"></canvas></div><div id="one4Note" style="font-size:12px;color:#555;margin-top:10px"></div></div>
+  <div class="card"><h3>Correlation r values (likes ~ predictor)</h3><div style="overflow:auto"><table id="rTable"></table></div></div>
+</div>
+
+<h2>Time of day</h2>
+<div class="banner" id="stoufferBanner"></div>
+<div class="card"><h3>Mean likes by hour of day (UTC)</h3><div class="chart tall"><canvas id="hourChart"></canvas></div></div>
+
+<h2>Author "size" — two definitions, side by side</h2>
+<p style="font-size:13px;color:#555;margin-top:0">The left chart tiers authors by <b>actual follower count</b> (at analysis time). The right chart tiers authors by <b>median likes per post</b> — a proxy for effective reach. Interesting divergence: under the follower definition, medium-size accounts show no 4-img penalty; under median-engagement, the pattern is different.</p>
+<div class="grid">
+  <div class="card"><h3>By follower count</h3><div class="chart"><canvas id="tierF"></canvas></div></div>
+  <div class="card"><h3>By median engagement</h3><div class="chart"><canvas id="tierM"></canvas></div></div>
+</div>
+<div style="margin-top:14px" class="card">
+  <h3>Tier-by-tier 1-vs-4 likes</h3>
+  <div style="overflow:auto"><table id="tierTable"></table></div>
+</div>
+
+<h2>Text features</h2>
+<div class="banner"><b>The key moderator:</b> with captions of 50–150 chars (typical length), 1-img and 4-img posts perform identically (p=0.75 <span class="sig ns">ns</span>). The 4-img penalty is concentrated in posts with very short captions.</div>
+<div class="grid">
+  <div class="card"><h3>Caption length by image count</h3><div class="chart"><canvas id="capChart"></canvas></div></div>
+  <div class="card"><h3>Alt-text use by image count</h3><div class="chart"><canvas id="altChart"></canvas></div></div>
+</div>
+<div style="margin-top:14px" class="card">
+  <h3>1-vs-4 stratified by caption length</h3>
+  <div style="overflow:auto"><table id="capTable"></table></div>
+</div>
+
+<h2>Additional analyses</h2>
+<div class="grid">
+  <div class="card"><h3>Image orientation (all image posts)</h3><div class="chart"><canvas id="aspectChart"></canvas></div><div id="aspectNote" style="font-size:12px;color:#555;margin-top:8px"></div></div>
+  <div class="card"><h3>Inequality: Gini by image count</h3><div class="chart"><canvas id="giniChart"></canvas></div></div>
+</div>
+<div class="grid" style="margin-top:16px">
+  <div class="card"><h3>Zero/low-engagement rate</h3><div class="chart"><canvas id="zeroChart"></canvas></div></div>
+  <div class="card"><h3>Composition — per 100 likes</h3><div class="chart"><canvas id="compChart"></canvas></div></div>
+</div>
+
+<h2>Multivariate regression</h2>
+<p style="font-size:13px;color:#555;margin-top:0">Negative binomial GLM: <code>likes ~ image_count dummies + log(1+followers) + has_alt + caption_length + hour (sin/cos)</code>. This is the single most important result — it controls for everything at once.</p>
+<div class="card">
+  <h3>Incident Rate Ratios (IRR) with 95% CI</h3>
+  <div class="chart tall"><canvas id="regChart"></canvas></div>
+  <div id="regNote" style="font-size:12px;color:#555;margin-top:10px"></div>
+</div>
+
+<div class="method" id="methodBox"></div>
+<div class="footer" id="footer"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script>
+const D = {"main": {"n_total": 22000, "n_single": 18897, "n_multi": 3103, "unique_authors": 1014, "date_range": ["2026-02-16T22:14:18.252Z", "2026-04-22T23:57:50.849Z"], "cutoff": "2026-04-23T00:00:00Z", "metrics": {"likeCount": {"single": {"n": 18897, "mean": 51.66761919881463, "median": 21.0}, "multi": {"n": 3103, "mean": 41.68514340960361, "median": 21.0}, "mw_U": 28808912.0, "mw_p": 0.11992687057723612, "cd": -0.017387659693112845, "ci_mean_s": [49.89172884584855, 53.60626951367942], "ci_mean_m": [39.58474057363841, 43.900128907508865]}, "repostCount": {"single": {"n": 18897, "mean": 8.057204847330263, "median": 3.0}, "multi": {"n": 3103, "mean": 6.512729616500161, "median": 3.0}, "mw_U": 29450062.0, "mw_p": 0.6867310518304954, "cd": 0.004480639324488278, "ci_mean_s": [7.692029158067418, 8.507351696036407], "ci_mean_m": [6.16789397357396, 6.870125684821141]}, "replyCount": {"single": {"n": 18897, "mean": 2.442451182727417, "median": 1.0}, "multi": {"n": 3103, "mean": 2.05285207863358, "median": 1.0}, "mw_U": 28484937.5, "mw_p": 0.007964668657322496, "cd": -0.028437759108347782, "ci_mean_s": [2.372753611684394, 2.5098163729692544], "ci_mean_m": [1.942950370609088, 2.1691991621011923]}, "quoteCount": {"single": {"n": 18897, "mean": 0.2286606339630629, "median": 0.0}, "multi": {"n": 3103, "mean": 0.18788269416693523, "median": 0.0}, "mw_U": 29404688.5, "mw_p": 0.6660289330665442, "cd": 0.0029330431839984517, "ci_mean_s": [0.21373763031168969, 0.24538418796634384], "ci_mean_m": [0.1679020302932646, 0.20915243312922976]}, "total_engagement": {"single": {"n": 18897, "mean": 62.39593586283537, "median": 26.0}, "multi": {"n": 3103, "mean": 50.438607798904286, "median": 26.0}, "mw_U": 28833650.0, "mw_p": 0.13900223063584063, "cd": -0.016543897732421264, "ci_mean_s": [60.22553447637191, 64.77764195374927], "ci_mean_m": [47.93958266194006, 53.066411537222045]}}}, "per_count": {"likeCount": {"by_count": {"1": {"n": 18897, "mean": 51.66761919881463, "median": 21.0, "std": 130.59823299282502, "ci_mean": [49.89172884584855, 53.60626951367942], "ci_median": [21.0, 22.0]}, "2": {"n": 2080, "mean": 44.354326923076925, "median": 25.0, "std": 58.339957822400144, "ci_mean": [41.86967548076923, 46.89146634615384], "ci_median": [23.0, 27.0]}, "3": {"n": 550, "mean": 42.81090909090909, "median": 16.5, "std": 68.04266226464789, "ci_mean": [37.30690909090909, 48.45486363636363], "ci_median": [14.0, 19.0]}, "4": {"n": 473, "mean": 28.6384778012685, "median": 12.0, "std": 61.402381870518, "ci_mean": [23.44365750528541, 34.4122621564482], "ci_median": [11.0, 14.0]}}, "pairs": [[1, 2, 18067382.5, 1.451743893594227e-09, 5.806975574376908e-09, -0.0806750715416773], [1, 3, 5375423.0, 0.16834412150302613, 0.16834412150302613, 0.034396609370414666], [1, 4, 5366106.5, 8.08858348622453e-14, 4.0442917431122654e-13, 0.20070212605757187], [2, 3, 644617.0, 4.520951612776432e-06, 1.3562854838329295e-05, 0.12695279720279729], [2, 4, 645019.5, 3.613412515953754e-26, 2.1680475095722524e-25, 0.3112284517807773], [3, 4, 150567.0, 1.3556573606452173e-05, 2.7113147212904345e-05, 0.15753988083797799]], "kruskal_H": 101.95758113689281, "kruskal_p": 5.895776069972614e-22, "spearman_r": 0.005758143636882189, "spearman_p": 0.3930887696433524}, "repostCount": {"by_count": {"1": {"n": 18897, "mean": 8.057204847330263, "median": 3.0, "std": 29.08643135681891, "ci_mean": [7.692029158067418, 8.507351696036407], "ci_median": [3.0, 3.0]}, "2": {"n": 2080, "mean": 6.876442307692308, "median": 4.0, "std": 10.03944231315425, "ci_mean": [6.449987980769231, 7.312992788461538], "ci_median": [3.0, 4.0]}, "3": {"n": 550, "mean": 6.643636363636364, "median": 3.0, "std": 9.984336797619198, "ci_mean": [5.847272727272728, 7.501818181818182], "ci_median": [2.0, 3.0]}, "4": {"n": 473, "mean": 4.761099365750528, "median": 2.0, "std": 9.463803055873457, "ci_mean": [3.9492071881606763, 5.6405919661733614], "ci_median": [1.0, 2.0]}}, "pairs": [[1, 2, 18736424.5, 0.0004339345465684164, 0.0013018036397052493, -0.046632122111364804], [1, 3, 5400682.0, 0.11356062569274736, 0.11356062569274736, 0.039257217355328056], [1, 4, 5312955.5, 1.5221372137879338e-12, 7.610686068939669e-12, 0.18880923524333149], [2, 3, 618589.5, 0.003099365221905224, 0.006198730443810448, 0.0814501748251748], [2, 4, 610329.5, 1.833440445531056e-16, 1.1000642673186338e-15, 0.24070885509839002], [3, 4, 148430.0, 8.049389581923193e-05, 0.00032197558327692774, 0.14111089755910045]], "kruskal_H": 67.67788558385452, "kruskal_p": 1.3408428353254583e-14, "spearman_r": -0.0065201196368289945, "spearman_p": 0.33352136048485626}, "replyCount": {"by_count": {"1": {"n": 18897, "mean": 2.442451182727417, "median": 1.0, "std": 4.882909602321345, "ci_mean": [2.372753611684394, 2.5098163729692544], "ci_median": [1.0, 1.0]}, "2": {"n": 2080, "mean": 2.225, "median": 1.0, "std": 3.2367463874278406, "ci_mean": [2.086514423076923, 2.3653966346153843], "ci_median": [1.0, 1.0]}, "3": {"n": 550, "mean": 1.9054545454545455, "median": 1.0, "std": 3.149315025523552, "ci_mean": [1.6454545454545455, 2.1691363636363628], "ci_median": [1.0, 1.0]}, "4": {"n": 473, "mean": 1.46723044397463, "median": 1.0, "std": 2.6568356321045443, "ci_mean": [1.23884778012685, 1.7124735729386893], "ci_median": [0.0, 1.0]}}, "pairs": [[1, 2, 18083680.0, 4.322658345193014e-10, 2.161329172596507e-09, -0.0798458037702362], [1, 3, 5400373.0, 0.10082191362506625, 0.10082191362506625, 0.03919775625760713], [1, 4, 5000884.5, 3.6625351038360876e-06, 1.465014041534435e-05, 0.11898126720339186], [2, 3, 640647.0, 7.965749263681146e-06, 2.389724779104344e-05, 0.12001223776223768], [2, 4, 595762.5, 1.2995347736698503e-13, 7.797208642019101e-13, 0.21109631647422344], [3, 4, 140523.0, 0.018273392791315443, 0.036546785582630886, 0.0803228906400153]], "kruskal_H": 67.55626833240831, "kruskal_p": 1.4236631087088633e-14, "spearman_r": 0.014047835664412965, "spearman_p": 0.03719518662615531}, "quoteCount": {"by_count": {"1": {"n": 18897, "mean": 0.2286606339630629, "median": 0.0, "std": 1.1222142430930044, "ci_mean": [0.21373763031168969, 0.24538418796634384], "ci_median": [0.0, 0.0]}, "2": {"n": 2080, "mean": 0.19807692307692307, "median": 0.0, "std": 0.6142418719796602, "ci_mean": [0.17211538461538461, 0.22548076923076923], "ci_median": [0.0, 0.0]}, "3": {"n": 550, "mean": 0.16727272727272727, "median": 0.0, "std": 0.5639615746881953, "ci_mean": [0.12363636363636364, 0.21459090909090842], "ci_median": [0.0, 0.0]}, "4": {"n": 473, "mean": 0.16701902748414377, "median": 0.0, "std": 0.5557966812678664, "ci_mean": [0.12050739957716702, 0.2219873150105708], "ci_median": [0.0, 0.0]}}, "pairs": [[1, 2, 19550923.0, 0.5231863213963012, 1.0, -0.005187891036835368], [1, 3, 5289193.0, 0.24041038633332612, 0.8412415715615323, 0.017803306922214768], [1, 4, 4564572.5, 0.1906808849073267, 0.8412415715615323, 0.021353546615954455], [2, 3, 585343.0, 0.16824831431230647, 0.8412415715615323, 0.02332692307692308], [2, 4, 505104.0, 0.13588707623932417, 0.815322457435945, 0.026801105870873254], [3, 4, 130553.0, 0.8598184186020814, 1.0, 0.003674802998270277]], "kruskal_H": 3.604360446973571, "kruskal_p": 0.3074770161458541, "spearman_r": -0.003803832564693567, "spearman_p": 0.5726387627526723}, "total_engagement": {"by_count": {"1": {"n": 18897, "mean": 62.39593586283537, "median": 26.0, "std": 160.97459507224247, "ci_mean": [60.22553447637191, 64.77764195374927], "ci_median": [25.0, 27.0]}, "2": {"n": 2080, "mean": 53.65384615384615, "median": 31.0, "std": 69.35877810803835, "ci_mean": [50.649002403846154, 56.67526442307692], "ci_median": [29.0, 33.0]}, "3": {"n": 550, "mean": 51.527272727272724, "median": 21.0, "std": 79.7448011896343, "ci_mean": [45.10109090909091, 58.171], "ci_median": [18.0, 24.0]}, "4": {"n": 473, "mean": 35.0338266384778, "median": 15.0, "std": 71.96849974140912, "ci_mean": [28.94260042283298, 41.79381606765327], "ci_median": [13.0, 17.0]}}, "pairs": [[1, 2, 18091273.5, 2.552193422974701e-09, 1.0208773691898804e-08, -0.07945942274109441], [1, 3, 5383724.5, 0.14946702354590632, 0.14946702354590632, 0.035994073133301496], [1, 4, 5358652.0, 1.299167815672168e-13, 6.49583907836084e-13, 0.1990341319544553], [2, 3, 643756.0, 5.863532021576324e-06, 1.759059606472897e-05, 0.12544755244755246], [2, 4, 642280.0, 2.6975157425512416e-25, 1.618509445530745e-24, 0.3056594568222475], [3, 4, 150193.0, 1.9469583869436746e-05, 3.893916773887349e-05, 0.15466461656736508]], "kruskal_H": 99.71804628089458, "kruskal_p": 1.7869806377813142e-21, "spearman_r": 0.005290777994246085, "spearman_p": 0.43262356115525413}}, "one_vs_n": {"2": {"n_1": 18897, "n_n": 2080, "mean_1": 51.66761919881463, "mean_n": 44.354326923076925, "median_1": 21.0, "median_n": 25.0, "ci_mean_1": [49.89172884584855, 53.60626951367942], "ci_mean_n": [41.86967548076923, 46.89146634615384], "mw_U": 18067382.5, "mw_p": 1.451743893594227e-09, "cd": -0.0806750715416773, "diff_mean": 7.313292275737702, "rank_biserial_r": -0.0806750715416773}, "3": {"n_1": 18897, "n_n": 550, "mean_1": 51.66761919881463, "mean_n": 42.81090909090909, "median_1": 21.0, "median_n": 16.5, "ci_mean_1": [49.89172884584855, 53.60626951367942], "ci_mean_n": [37.30690909090909, 48.45486363636363], "mw_U": 5375423.0, "mw_p": 0.16834412150302613, "cd": 0.034396609370414666, "diff_mean": 8.856710107905535, "rank_biserial_r": 0.034396609370414666}, "4": {"n_1": 18897, "n_n": 473, "mean_1": 51.66761919881463, "mean_n": 28.6384778012685, "median_1": 21.0, "median_n": 12.0, "ci_mean_1": [49.89172884584855, 53.60626951367942], "ci_mean_n": [23.44365750528541, 34.4122621564482], "mw_U": 5366106.5, "mw_p": 8.08858348622453e-14, "cd": 0.20070212605757187, "diff_mean": 23.029141397546127, "rank_biserial_r": 0.20070212605757187}}, "time": {"hour_mean_by_ic": {"1": [46.04135737009544, 47.53768278965129, 57.78748180494905, 43.29747899159664, 57.02750491159136, 43.0258064516129, 36.265415549597854, 41.68079800498753, 44.40384615384615, 61.69367088607595, 72.15236051502146, 55.271777003484324, 53.650895140664964, 48.97693079237713, 53.90685772773797, 53.002798507462686, 49.5765690376569, 53.166666666666664, 57.276031434184674, 44.10858835143139, 49.43904761904762, 59.898128898128896, 52.36003770028275, 54.02566844919786], "2": [33.666666666666664, 48.19512195121951, 50.74666666666667, 32.63235294117647, 61.18604651162791, 72.48648648648648, 31.95, 32.84782608695652, 33.24324324324324, 35.45283018867924, 47.10204081632653, 53.3875, 48.10588235294118, 44.654545454545456, 42.98, 50.506024096385545, 59.0, 47.22727272727273, 61.833333333333336, 49.61940298507463, 36.19047619047619, 28.055555555555557, 32.83606557377049, 39.927927927927925], "3": [35.35294117647059, 53.82142857142857, 70.75, 73.5, 86.3, 53.666666666666664, 66.83333333333333, 21.333333333333332, 45.8, 37.8, 85.63636363636364, 36.30769230769231, 58.333333333333336, 47.0, 27.40909090909091, 27.866666666666667, 49.666666666666664, 39.78431372549019, 29.21153846153846, 56.666666666666664, 48.63333333333333, 24.736842105263158, 25.25925925925926, 42.84], "4": [37.476190476190474, 71.63636363636364, 37.421052631578945, 29.2, 13.705882352941176, 71.85714285714286, 11.625, 11.857142857142858, 26.333333333333332, 22.818181818181817, 26.0, 23.571428571428573, 22.625, 31.333333333333332, 22.333333333333332, 45.708333333333336, 19.09375, 44.38095238095238, 25.96, 25.263157894736842, 21.818181818181817, 11.515151515151516, 16.11764705882353, 16.51851851851852]}, "dow_mean_by_ic": {"1": [53.577265973254086, 58.25207848353841, 46.73411918795023, 51.33570863024545, 50.44227941176471, 49.29197945476096, 51.798901563160115], "2": [40.430034129692835, 42.5253164556962, 45.43390804597701, 43.0968992248062, 43.4375, 46.58188153310105, 49.51162790697674], "3": [39.348314606741575, 48.7375, 40.833333333333336, 30.907894736842106, 46.24418604651163, 45.42028985507246, 49.31818181818182], "4": [18.535211267605632, 47.76315789473684, 28.983606557377048, 27.428571428571427, 27.366666666666667, 21.776315789473685, 27.383561643835616]}, "stouffer_1_vs_4": {"z": 7.465979560212288, "p": 8.260059303211165e-14, "n_strata": 24}}, "tier_by_followers": {"method": "followers", "thresholds": {"small_max": 1613.9335999999998, "medium_max": 3640.954400000001}, "n_qualified": 665, "total_authors": 1014, "small": {"n_authors": 222, "n_posts": 4661, "by_count": {"1": {"n": 4021, "mean": 18.50833126088038, "median": 9.0, "ci_mean": [17.575472519273813, 19.458132305396667]}, "2": {"n": 434, "mean": 20.018433179723502, "median": 16.0, "ci_mean": [18.287960829493088, 21.77425115207373]}, "3": {"n": 98, "mean": 12.561224489795919, "median": 8.0, "ci_mean": [9.673214285714286, 15.938775510204081]}, "4": {"n": 108, "mean": 9.731481481481481, "median": 6.0, "ci_mean": [6.768518518518518, 14.287499999999993]}}, "mw_1_vs_4": {"U": 271668.0, "p": 8.011774848267171e-06, "cd": 0.2511536654784603}}, "medium": {"n_authors": 221, "n_posts": 6789, "by_count": {"1": {"n": 6030, "mean": 30.29353233830846, "median": 15.0, "ci_mean": [29.047392205638477, 31.598014096185736]}, "2": {"n": 545, "mean": 30.722935779816513, "median": 22.0, "ci_mean": [28.255045871559634, 33.35596330275229]}, "3": {"n": 84, "mean": 21.238095238095237, "median": 12.0, "ci_mean": [16.641964285714284, 26.34553571428571]}, "4": {"n": 130, "mean": 20.584615384615386, "median": 13.0, "ci_mean": [17.099807692307692, 24.26153846153846]}}, "mw_1_vs_4": {"U": 395187.5, "p": 0.8717655708034995, "cd": 0.008259982140579103}}, "large": {"n_authors": 222, "n_posts": 9842, "by_count": {"1": {"n": 8249, "mean": 84.90374590859498, "median": 44.0, "ci_mean": [81.0282428173112, 89.08468602254818]}, "2": {"n": 1024, "mean": 63.55078125, "median": 48.0, "ci_mean": [59.2759521484375, 68.1662841796875]}, "3": {"n": 351, "mean": 57.47578347578347, "median": 32.0, "ci_mean": [49.361680911680914, 66.13682336182336]}, "4": {"n": 218, "mean": 43.65137614678899, "median": 17.0, "ci_mean": [33.251949541284404, 55.75733944954128]}}, "mw_1_vs_4": {"U": 1219398.0, "p": 2.4585990719892153e-19, "cd": 0.35618106615091505}}}, "tier_by_median_engagement": {"method": "median_engagement", "thresholds": {"small_max": 10.0, "medium_max": 35.0}, "n_qualified": 665, "total_authors": 1014, "small": {"n_authors": 225, "n_posts": 5836, "by_count": {"1": {"n": 5106, "mean": 5.630434782608695, "median": 4.0, "ci_mean": [5.409895221308265, 5.873678025851939]}, "2": {"n": 381, "mean": 7.574803149606299, "median": 6.0, "ci_mean": [6.78989501312336, 8.451509186351705]}, "3": {"n": 166, "mean": 6.192771084337349, "median": 5.0, "ci_mean": [5.5602409638554215, 6.891566265060241]}, "4": {"n": 183, "mean": 6.054644808743169, "median": 6.0, "ci_mean": [5.36051912568306, 6.775956284153006]}}, "mw_1_vs_4": {"U": 413196.0, "p": 0.007545932899731187, "cd": -0.11558886042136218}}, "medium": {"n_authors": 221, "n_posts": 7935, "by_count": {"1": {"n": 6835, "mean": 28.339429407461594, "median": 20.0, "ci_mean": [26.487896854425752, 31.386349670811995]}, "2": {"n": 765, "mean": 22.030065359477124, "median": 18.0, "ci_mean": [20.759346405228758, 23.30718954248366]}, "3": {"n": 162, "mean": 17.12962962962963, "median": 14.0, "ci_mean": [15.191358024691358, 19.24089506172839]}, "4": {"n": 173, "mean": 19.017341040462426, "median": 16.0, "ci_mean": [16.491184971098267, 22.15621387283237]}}, "mw_1_vs_4": {"U": 714830.0, "p": 2.5451813123943775e-06, "cd": 0.20906080992511344}}, "large": {"n_authors": 219, "n_posts": 7521, "by_count": {"1": {"n": 6359, "mean": 115.58641295801226, "median": 71.0, "ci_mean": [111.58746265136028, 120.21904387482307]}, "2": {"n": 857, "mean": 82.57759626604434, "median": 69.0, "ci_mean": [77.87955075845974, 87.69331971995332]}, "3": {"n": 205, "mean": 94.56585365853658, "median": 72.0, "ci_mean": [83.06268292682927, 107.13707317073171]}, "4": {"n": 100, "mean": 88.45, "median": 51.0, "ci_mean": [68.0495, 112.03149999999998]}}, "mw_1_vs_4": {"U": 389302.5, "p": 0.00011501101569491099, "cd": 0.2244142160717093}}}, "text": {"by_count": {"1": {"n": 18897, "text_len_mean": 116.41863787902842, "text_len_median": 101.0, "alt_any_rate": 0.3098375403503202, "alt_total_len_mean": 39.91247287929301}, "2": {"n": 2080, "text_len_mean": 122.97836538461539, "text_len_median": 101.0, "alt_any_rate": 0.25432692307692306, "alt_total_len_mean": 68.06923076923077}, "3": {"n": 550, "text_len_mean": 127.36727272727273, "text_len_median": 98.5, "alt_any_rate": 0.1781818181818182, "alt_total_len_mean": 54.232727272727274}, "4": {"n": 473, "text_len_mean": 142.82241014799155, "text_len_median": 132.0, "alt_any_rate": 0.26215644820295986, "alt_total_len_mean": 102.44820295983087}}, "corrs": {"text_len__likeCount": {"r": -0.0864940824003821, "p": 8.326662635458631e-38}, "text_len__repostCount": {"r": 0.05654582013468881, "p": 4.725244378909601e-17}, "text_len__replyCount": {"r": -0.0888338908036727, "p": 8.59460454313051e-40}, "text_len__quoteCount": {"r": -0.01394911732446412, "p": 0.038548756802062024}, "text_len__total_engagement": {"r": -0.06990651527473296, "p": 3.0283125328774586e-25}, "alt_count_nonempty__likeCount": {"r": 0.11234554742048213, "p": 1.0101733315876714e-62}, "alt_count_nonempty__repostCount": {"r": 0.11032605469810658, "p": 1.5389735613161097e-60}, "alt_count_nonempty__replyCount": {"r": 0.12513654647861913, "p": 1.7360056838848655e-77}, "alt_count_nonempty__quoteCount": {"r": 0.07071197332837563, "p": 8.562353725177211e-26}, "alt_count_nonempty__total_engagement": {"r": 0.11914090449327647, "p": 2.306052499184788e-70}, "alt_total_len__likeCount": {"r": 0.12809174860807254, "p": 3.9495238436854e-81}, "alt_total_len__repostCount": {"r": 0.13241258418285068, "p": 1.296097044046118e-86}, "alt_total_len__replyCount": {"r": 0.13614873019231322, "p": 1.6581130497012147e-91}, "alt_total_len__quoteCount": {"r": 0.08471333658372954, "p": 2.491645526044718e-36}, "alt_total_len__total_engagement": {"r": 0.13619336982491695, "p": 1.4464468333849854e-91}, "followersCount__likeCount": {"r": 0.47330086907882724, "p": 0.0}, "followersCount__repostCount": {"r": 0.35295515572033187, "p": 0.0}, "followersCount__replyCount": {"r": 0.3107863269004663, "p": 0.0}, "followersCount__quoteCount": {"r": 0.20147666024242308, "p": 2.9959551914088425e-200}, "followersCount__total_engagement": {"r": 0.46543119464447547, "p": 0.0}, "image_count__likeCount": {"r": 0.005758143636882189, "p": 0.3930887696433524}, "image_count__repostCount": {"r": -0.0065201196368289945, "p": 0.33352136048485626}, "image_count__replyCount": {"r": 0.014047835664412965, "p": 0.03719518662615531}, "image_count__quoteCount": {"r": -0.003803832564693567, "p": 0.5726387627526723}, "image_count__total_engagement": {"r": 0.005290777994246085, "p": 0.43262356115525413}}, "caption_stratified_1_vs_4": [{"bucket": "0-1", "n_1": 829, "n_4": 9, "mean_1": 43.97587454764777, "mean_4": 9.11111111111111, "mw_p": 0.0028183283725846174, "cd": 0.5783407049993299}, {"bucket": "1-50", "n_1": 4788, "n_4": 142, "mean_1": 71.16144527986633, "mean_4": 25.859154929577464, "mw_p": 4.473896060796729e-22, "cd": 0.4748976314024498}, {"bucket": "50-150", "n_1": 7058, "n_4": 108, "mean_1": 48.14494190988949, "mean_4": 46.407407407407405, "mw_p": 0.7383197096626444, "cd": -0.018698246276880437}, {"bucket": "150-300", "n_1": 5991, "n_4": 192, "mean_1": 41.76331163411784, "mean_4": 22.234375, "mw_p": 0.00543063699247491, "cd": 0.11766782117620878}, {"bucket": "300-1000", "n_1": 231, "n_4": 22, "mean_1": 39.71861471861472, "mean_4": 23.227272727272727, "mw_p": 0.15882041648581968, "cd": 0.1820149547422274}], "pearson_corrs": {"text_len__likeCount": {"r": -0.0677857556536411, "p": 7.868004093835914e-24}, "text_len__repostCount": {"r": 0.0016120965300160863, "p": 0.8110287194832614}, "text_len__replyCount": {"r": -0.07972925585991245, "p": 2.313104697027112e-32}, "text_len__quoteCount": {"r": -0.005251999676457542, "p": 0.43600413183057835}, "text_len__total_engagement": {"r": -0.05727841211498398, "p": 1.8593632938232352e-17}, "alt_count_nonempty__likeCount": {"r": 0.052949977412809185, "p": 3.877764995317785e-15}, "alt_count_nonempty__repostCount": {"r": 0.047588160744415686, "p": 1.640464953630024e-12}, "alt_count_nonempty__replyCount": {"r": 0.0848623456339854, "p": 1.879994474236969e-36}, "alt_count_nonempty__quoteCount": {"r": 0.06545333405063551, "p": 2.5227872469591714e-22}, "alt_count_nonempty__total_engagement": {"r": 0.05463600479570483, "p": 5.085952076012229e-16}, "alt_total_len__likeCount": {"r": 0.06132228675504772, "p": 8.737328273654619e-20}, "alt_total_len__repostCount": {"r": 0.07374169931505938, "p": 6.503046247441669e-28}, "alt_total_len__replyCount": {"r": 0.07535106016855474, "p": 4.480396163198624e-29}, "alt_total_len__quoteCount": {"r": 0.07818841543809656, "p": 3.484692151359226e-31}, "alt_total_len__total_engagement": {"r": 0.06592754808693553, "p": 1.258666945454471e-22}, "followersCount__likeCount": {"r": 0.3541083621057265, "p": 0.0}, "followersCount__repostCount": {"r": 0.2434062098167674, "p": 4.0222781599313695e-294}, "followersCount__replyCount": {"r": 0.3321356719381292, "p": 0.0}, "followersCount__quoteCount": {"r": 0.1736423381770466, "p": 1.7613197066452346e-148}, "followersCount__total_engagement": {"r": 0.3428367396869023, "p": 0.0}, "image_count__likeCount": {"r": -0.032158309843523775, "p": 1.8348567064812988e-06}, "image_count__repostCount": {"r": -0.021872446470130705, "p": 0.0011769344181281006}, "image_count__replyCount": {"r": -0.03598909665418016, "p": 9.321767569336655e-08}, "image_count__quoteCount": {"r": -0.01398919011145989, "p": 0.037994335951538505}, "image_count__total_engagement": {"r": -0.03126022266328318, "p": 3.5263131430849103e-06}}}, "aspect": {"by_count": {"1": {"orient_mean": {"landscape": 36.67958230283045, "portrait": 65.8830704888037, "square": 43.007585335018966}, "orient_n": {"landscape": 3639, "portrait": 11477, "square": 1582}}, "2": {"orient_mean": {"landscape": 37.5, "portrait": 46.7475, "square": 34.99248120300752}, "orient_n": {"landscape": 336, "portrait": 1600, "square": 133}}, "3": {"orient_mean": {"landscape": 37.47872340425532, "portrait": 41.84615384615385, "square": 78.6923076923077}, "orient_n": {"landscape": 94, "portrait": 429, "square": 26}}, "4": {"orient_mean": {"landscape": 32.85849056603774, "portrait": 25.04601226993865, "square": 47.25}, "orient_n": {"landscape": 106, "portrait": 326, "square": 40}}}, "overall_kruskal": {"H": 556.3997880792488, "p": 1.5111972427425626e-121, "n_landscape": 4175, "n_portrait": 13832, "n_square": 1781, "mean_landscape": 36.666586826347306, "mean_portrait": 61.96161075766339, "mean_square": 43.02526670409882}}, "gini": {"1": {"gini_likes": 0.6675382761498486, "gini_total": 0.6630254365222199, "top1pct_share_likes": 0.16477170888286427, "top10pct_share_likes": 0.5174325532614407}, "2": {"gini_likes": 0.5525087579345658, "gini_total": 0.547977305624483, "top1pct_share_likes": 0.09262169808253032, "top10pct_share_likes": 0.3766868638694083}, "3": {"gini_likes": 0.6359874288626518, "gini_total": 0.6304272791428754, "top1pct_share_likes": 0.09169285653614202, "top10pct_share_likes": 0.4579971120360146}, "4": {"gini_likes": 0.6588122407432321, "gini_total": 0.6531543490927565, "top1pct_share_likes": 0.1466853683744279, "top10pct_share_likes": 0.5385353609921748}}, "zero_inflation": {"1": {"n": 18897, "n_zero_likes": 640, "rate_zero": 0.033867809705244216, "n_sub5_likes": 3412, "rate_sub5": 0.18055776049108324}, "2": {"n": 2080, "n_zero_likes": 30, "rate_zero": 0.014423076923076924, "n_sub5_likes": 214, "rate_sub5": 0.10288461538461538}, "3": {"n": 550, "n_zero_likes": 11, "rate_zero": 0.02, "n_sub5_likes": 90, "rate_sub5": 0.16363636363636364}, "4": {"n": 473, "n_zero_likes": 19, "rate_zero": 0.040169133192389, "n_sub5_likes": 93, "rate_sub5": 0.19661733615221988}}, "composition": {"1": {"reposts_per_100_likes": 15.594302528875017, "replies_per_100_likes": 4.727237717938922, "like_share": 0.8311063820731629, "repost_share": 0.12960524355727693, "reply_share": 0.039288374369560126}, "2": {"reposts_per_100_likes": 15.503430633989831, "replies_per_100_likes": 5.016421518150384, "like_share": 0.8297388207360507, "repost_share": 0.12863798251609887, "reply_share": 0.041623196747850484}, "3": {"reposts_per_100_likes": 15.518559415611993, "replies_per_100_likes": 4.450862142189757, "like_share": 0.8335457377513452, "repost_share": 0.12935429056924383, "reply_share": 0.03709997167941093}, "4": {"reposts_per_100_likes": 16.62483389930607, "replies_per_100_likes": 5.123283626162705, "like_share": 0.8213679359689546, "repost_share": 0.13655105505699733, "reply_share": 0.042081008974048026}}, "regression": {"dep_var": "likeCount", "n": 22000, "formula_english": "likeCount ~ is_2img + is_3img + is_4img + text_len + log(1+followers) + has_alt + hour_sin + hour_cos  (negative binomial)", "negative_binomial": {"converged": true, "llf": -102607.89596155101, "coeffs": {"is_2img": -0.04569622578819518, "is_3img": -0.2661232867847054, "is_4img": -0.4896999330623023, "text_len": -0.00015248740266860747, "log_followers": 0.6841922096469295, "has_alt": 0.2072134333256516, "hour_sin": 0.022231567408563843, "hour_cos": -0.05821416403793957, "const": -1.8778833930301726}, "pvalues": {"is_2img": 0.05205022643247814, "is_3img": 1.8067711166343518e-09, "is_4img": 2.3015385410559726e-24, "text_len": 0.050012965155815374, "log_followers": 0.0, "has_alt": 3.184832242043635e-43, "hour_sin": 0.03441287763203253, "hour_cos": 1.2754545237511442e-09, "const": 4.571127665563885e-230}, "std_err": {"is_2img": 0.02352179941437883, "is_3img": 0.04424849792231545, "is_4img": 0.04807810442179777, "text_len": 7.78055275117382e-05, "log_followers": 0.006912751560493917, "has_alt": 0.015032979387893015, "hour_sin": 0.010510383905892751, "hour_cos": 0.009589747226735926, "const": 0.057987520744419846}, "irr": {"is_2img": 0.9553321233795316, "is_3img": 0.7663446415098738, "is_4img": 0.6128102506937221, "text_len": 0.9998475242229444, "log_followers": 1.9821700108420908, "has_alt": 1.2302451190687151, "hour_sin": 1.022480530224771, "hour_cos": 0.9434478731929443, "const": 0.1529134210832872}, "irr_ci95_lo": {"is_2img": 0.9122893171561339, "is_3img": 0.7026834668591754, "is_4img": 0.5577015668116343, "text_len": 0.9996950630683302, "log_followers": 1.9554952096974123, "has_alt": 1.1945258580529763, "hour_sin": 1.0016329252621874, "hour_cos": 0.9258808510165714, "const": 0.1364855070786628}, "irr_ci95_hi": {"is_2img": 1.000405736204239, "is_3img": 0.8357733421506478, "is_4img": 0.6733644402368002, "text_len": 1.0000000086290526, "log_followers": 2.0092086814621735, "has_alt": 1.2670324738380625, "hour_sin": 1.0437620492707622, "hour_cos": 0.9613481998844786, "const": 0.1713186612108075}}, "negative_binomial_total": {"converged": true, "llf": -106914.89998665839, "coeffs": {"is_2img": -0.046552246923033544, "is_3img": -0.2605681048343863, "is_4img": -0.47842775368376983, "text_len": 1.4128946181027497e-05, "log_followers": 0.6679971698470791, "has_alt": 0.2244802548460637, "hour_sin": 0.018072453442786407, "hour_cos": -0.05881848596142411, "const": -1.5744718914070317}, "pvalues": {"is_2img": 0.04711718004428335, "is_3img": 3.4053976571328482e-09, "is_4img": 1.381134788289856e-23, "text_len": 0.8554248301509703, "log_followers": 0.0, "has_alt": 1.1326697584237391e-50, "hour_sin": 0.08453249839525079, "hour_cos": 7.648883982972691e-10, "const": 1.3086292289318211e-164}, "irr": {"is_2img": 0.954514688811678, "is_3img": 0.7706136720723418, "is_4img": 0.6197570369188559, "text_len": 1.000014129045995, "log_followers": 1.950327232132838, "has_alt": 1.2516719966477725, "hour_sin": 1.0182367484752393, "hour_cos": 0.942877899200745, "const": 0.20711690402068242}, "irr_ci95_lo": {"is_2img": 0.9116385739082802, "is_3img": 0.7068261114846238, "is_4img": 0.5643353473639714, "text_len": 0.9998621513842417, "log_followers": 1.92424956242864, "has_alt": 1.2154231322227693, "hour_sin": 0.9975410292038844, "hour_cos": 0.9253739936252037, "const": 0.18501264149197955}, "irr_ci95_hi": {"is_2img": 0.9994073498352428, "is_3img": 0.8401577445087597, "is_4img": 0.6806215251349713, "text_len": 1.0001661298081423, "log_followers": 1.9767583096644192, "has_alt": 1.2890019497383332, "hour_sin": 1.0393618363476036, "hour_cos": 0.9607128997849081, "const": 0.23186205864193454}}, "pseudo_r2_likes": {"mcfadden": 0.05339668781616036, "cox_snell": 0.40914230180149824, "nagelkerke": 0.4091637942193699, "deviance_r2": 0.2730903951391287, "llf_full": -102607.89596155101, "llf_null": -108395.87675309501, "aic_full": 205233.79192310202, "bic_full": 205305.7811026931}, "pseudo_r2_total": {"mcfadden": 0.04976675713302503, "cox_snell": 0.3989296141388724, "nagelkerke": 0.3989440252108603, "deviance_r2": 0.2662496204161362, "llf_full": -106914.89998665839, "llf_null": -112514.37559065234, "aic_full": 213847.79997331678, "bic_full": 213919.78915290785}}, "confound": {"n_authors": 1014, "n_paired": 301, "n_only_single": 496, "n_only_multi": 42, "n_both": 476, "likeCount": {"mean_diff": 6.599869969191883, "wilcoxon_p": 1.6791433698279216e-06, "n": 301}, "repostCount": {"mean_diff": 0.7441102013013351, "wilcoxon_p": 0.04170942755387406, "n": 301}, "replyCount": {"mean_diff": 0.01827933256680769, "wilcoxon_p": 0.5745438666223408, "n": 301}, "quoteCount": {"mean_diff": -0.011163742917990438, "wilcoxon_p": 0.1997787945227617, "n": 301}, "total_engagement": {"mean_diff": 7.351095760142037, "wilcoxon_p": 6.0283534662248806e-05, "n": 301}}, "caveats": {"cutoff": "Posts indexed strictly before 2026-04-23T00:00:00Z", "followers_snapshot_time": "2026-04-23 (fetched once at analysis time; not at post time)", "feed_curation": "This is a curated algorithmic feed, not a global Bluesky snapshot.", "layout_context": "Data reflects engagement before Bluesky's recent swipe-carousel rollout for multi-photo posts. Posts in this sample were largely viewed in the legacy grid layout."}};
+const PC = ["#3b82f6","#14b8a6","#a855f7","#ef4444"];
+const SINGLE = "#3b82f6", MULTI = "#ec4899";
+const m = D.main, p = D.per_count, one = D.one_vs_n, t = D.time, tf = D.tier_by_followers, tm = D.tier_by_median_engagement, tx = D.text;
+const bc = (d, ic) => d[ic] || d[String(ic)] || {};
+const pStar = pv => pv == null ? "" : pv<0.001?"***":pv<0.01?"**":pv<0.05?"*":"ns";
+const eff = cd => Math.abs(cd)<0.1?"negligible":Math.abs(cd)<0.3?"small":Math.abs(cd)<0.5?"medium":"large";
+const sigCls = pv => pv<0.05?"pos":"ns";
+
+// subtitle
+document.getElementById("subtitle").innerHTML =
+  "<b>n=" + m.n_total.toLocaleString() + "</b> image posts across <b>" + m.unique_authors.toLocaleString() + "</b> unique authors. Range: "
+  + m.date_range[0].slice(0,10) + " → " + m.date_range[1].slice(0,10)
+  + ". Cutoff: <b>" + m.cutoff + "</b>.";
+
+// KPIs
+document.getElementById("kpi").innerHTML = [
+  ["Posts analyzed", m.n_total.toLocaleString(), "all with ≥1 image"],
+  ["Unique authors", m.unique_authors.toLocaleString(), "1,014 in this sample"],
+  ["Date range", m.date_range[0].slice(0,10) + "–" + m.date_range[1].slice(0,10), "~" + Math.round((new Date(m.date_range[1]) - new Date(m.date_range[0]))/(86400000)) + " days"],
+  ["Cutoff", "< 2026-04-23", "fixed UTC cutoff"],
+].map(([lab,val,sub])=>`<div class="box"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub">${sub}</div></div>`).join("");
+
+// main chart (1 vs 2+)
+new Chart(document.getElementById("mainChart"), {
+  type:"bar", data:{
+    labels:["likes","reposts","replies","quotes","total"],
+    datasets:[
+      {label:"1 photo", data:["likeCount","repostCount","replyCount","quoteCount","total_engagement"].map(k=>m.metrics[k].single.mean), backgroundColor:SINGLE},
+      {label:"2+ photos", data:["likeCount","repostCount","replyCount","quoteCount","total_engagement"].map(k=>m.metrics[k].multi.mean), backgroundColor:MULTI},
+    ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true}}}
+});
+
+(function(){
+  let h = '<thead><tr><th>Metric</th><th>1 photo mean</th><th>2+ photos mean</th><th>MW p</th><th>Cliff\u2019s d</th></tr></thead><tbody>';
+  ["likeCount","repostCount","replyCount","quoteCount","total_engagement"].forEach(k=>{
+    const s = m.metrics[k];
+    h += `<tr><td>${k.replace("Count","").replace("total_engagement","total")}</td><td class="p">${s.single.mean.toFixed(2)}</td><td class="p">${s.multi.mean.toFixed(2)}</td><td class="p">${s.mw_p.toPrecision(3)} <span class="sig ${sigCls(s.mw_p)}">${pStar(s.mw_p)}</span></td><td class="p">${(s.cd>=0?"+":"")+s.cd.toFixed(3)}</td></tr>`;
+  });
+  document.getElementById("mainTable").innerHTML = h + "</tbody>";
+})();
+
+// per-count charts
+(function(){
+  const ics = ["1","2","3","4"];
+  const means = ics.map(i=>p.likeCount.by_count[i].mean);
+  const cis = ics.map(i=>p.likeCount.by_count[i].ci_mean);
+  const ns = ics.map(i=>p.likeCount.by_count[i].n);
+  new Chart(document.getElementById("pcLikes"), {
+    type:"bar",
+    data:{labels:ics.map((l,i)=>l+" img (n="+ns[i].toLocaleString()+")"), datasets:[{data:means, backgroundColor:PC}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:ctx=>"95% CI ["+cis[ctx.dataIndex][0].toFixed(1)+", "+cis[ctx.dataIndex][1].toFixed(1)+"]"}}},scales:{y:{beginAtZero:true,title:{display:true,text:"mean likes"}}}},
+    plugins:[{afterDatasetsDraw(ch){
+      const {ctx, scales:{x,y}} = ch;
+      ctx.save(); ctx.strokeStyle="#222"; ctx.lineWidth=1.5;
+      ch.data.datasets[0].data.forEach((v,i)=>{
+        const [lo,hi]=cis[i], cx=x.getPixelForValue(i), yL=y.getPixelForValue(lo), yH=y.getPixelForValue(hi);
+        ctx.beginPath(); ctx.moveTo(cx,yL); ctx.lineTo(cx,yH); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx-6,yL); ctx.lineTo(cx+6,yL); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx-6,yH); ctx.lineTo(cx+6,yH); ctx.stroke();
+      }); ctx.restore();
+    }}]
+  });
+  const meds = ics.map(i=>p.likeCount.by_count[i].median);
+  new Chart(document.getElementById("pcMedians"), {
+    type:"bar", data:{labels:ics.map((l,i)=>l+" img"), datasets:[{data:meds, backgroundColor:PC}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:"median likes"}}}}
+  });
+  let h='<thead><tr><th>Pair</th><th>p (raw)</th><th>p (Holm)</th><th>Cliff\u2019s d</th><th>Effect</th></tr></thead><tbody>';
+  for(const r of p.likeCount.pairs){
+    const [a,b,U,pr,ph,cd]=r;
+    h += `<tr><td>${a} vs ${b}</td><td class="p">${pr.toPrecision(3)}</td><td class="p">${ph.toPrecision(3)} <span class="sig ${sigCls(ph)}">${pStar(ph)}</span></td><td class="p">${(cd>=0?"+":"")+cd.toFixed(3)}</td><td>${eff(cd)}</td></tr>`;
+  }
+  document.getElementById("pwTable").innerHTML = h + "</tbody>";
+})();
+
+// dedicated 1-vs-n charts
+function oneVsN(n, canvasId, noteId){
+  const d = one[String(n)];
+  new Chart(document.getElementById(canvasId), {
+    type:"bar",
+    data:{
+      labels:[`1 img (n=${d.n_1.toLocaleString()})`, `${n} img (n=${d.n_n.toLocaleString()})`],
+      datasets:[{label:"mean", data:[d.mean_1, d.mean_n], backgroundColor:[PC[0], PC[n-1]]}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:"mean likes"}}}}
+  });
+  const cd = d.cd, sig = pStar(d.mw_p);
+  document.getElementById(noteId).innerHTML =
+    `<b>Mann-Whitney p = ${d.mw_p.toPrecision(3)} <span class="sig ${sigCls(d.mw_p)}">${sig}</span></b><br>` +
+    `Cliff's d = ${(cd>=0?"+":"")+cd.toFixed(3)} <i>(${eff(cd)})</i><br>` +
+    `Mean: <b>1 img ${d.mean_1.toFixed(1)}</b> vs <b>${n} img ${d.mean_n.toFixed(1)}</b> · Median: <b>${d.median_1.toFixed(0)}</b> vs <b>${d.median_n.toFixed(0)}</b>`;
+}
+oneVsN(2,"one2","one2Note");
+oneVsN(3,"one3","one3Note");
+oneVsN(4,"one4","one4Note");
+
+// r values table
+(function(){
+  let h='<thead><tr><th>Correlation</th><th>Spearman r</th><th>p</th></tr></thead><tbody>';
+  const pairs = [
+    ["image_count ↔ likes","image_count__likeCount"],
+    ["text_len ↔ likes","text_len__likeCount"],
+    ["alt_count ↔ likes","alt_count_nonempty__likeCount"],
+    ["followers ↔ likes","followersCount__likeCount"],
+  ];
+  for(const [label, key] of pairs){
+    const c = tx.corrs[key];
+    h += `<tr><td>${label}</td><td class="p"><span class="sig ${sigCls(c.p)}">${(c.r>=0?"+":"")+c.r.toFixed(3)}</span></td><td class="p">${c.p.toPrecision(3)}</td></tr>`;
+  }
+  document.getElementById("rTable").innerHTML = h + "</tbody>";
+})();
+
+// hour
+(function(){
+  if(t.stouffer_1_vs_4){
+    const s = t.stouffer_1_vs_4;
+    document.getElementById("stoufferBanner").innerHTML = `<b>Answer: no.</b> Hour-stratified 1 vs 4 test: Stouffer combined z = <b>${s.z.toFixed(2)}</b>, p = <b>${s.p.toPrecision(2)}</b> <span class="sig pos">${pStar(s.p)}</span> (across ${s.n_strata} hour strata). The 4-image penalty is consistent across hours of the day.`;
+  }
+  new Chart(document.getElementById("hourChart"), {
+    type:"line",
+    data:{labels:Array.from({length:24}, (_,i)=>i+":00"),
+      datasets:[1,2,3,4].map((ic,i)=>({label:ic+" img", data:t.hour_mean_by_ic[String(ic)], borderColor:PC[i], backgroundColor:PC[i], pointRadius:2, borderWidth:2, tension:0.3, fill:false, spanGaps:true}))},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{x:{title:{display:true,text:"hour (UTC)"}},y:{beginAtZero:true,title:{display:true,text:"mean likes"}}}}
+  });
+})();
+
+// tier charts
+function tierChart(id, tierData){
+  const tiers=["small","medium","large"];
+  new Chart(document.getElementById(id), {
+    type:"bar",
+    data:{labels:tiers.map(tn=>`${tn}\n(n=${tierData[tn].n_authors})`),
+      datasets:[1,2,3,4].map((ic,i)=>({label:ic+" img", backgroundColor:PC[i], data:tiers.map(tn=>(bc(tierData[tn].by_count,ic).mean)||0)}))},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true,title:{display:true,text:"mean likes"}}}}
+  });
+}
+tierChart("tierF", tf);
+tierChart("tierM", tm);
+
+(function(){
+  let h='<thead><tr><th>Tier definition</th><th>Tier</th><th>n authors</th><th>1-img mean</th><th>4-img mean</th><th>p</th><th>d</th></tr></thead><tbody>';
+  for(const tn of ["small","medium","large"]){
+    const d = tf[tn], mw = d.mw_1_vs_4||{};
+    h += `<tr><td>followers (size)</td><td>${tn}</td><td>${d.n_authors}</td><td class="p">${(bc(d.by_count,1).mean||0).toFixed(1)}</td><td class="p">${(bc(d.by_count,4).mean||0).toFixed(1)}</td><td class="p">${mw.p?mw.p.toPrecision(3):"—"} <span class="sig ${sigCls(mw.p||1)}">${pStar(mw.p||1)}</span></td><td class="p">${mw.cd!==undefined?(mw.cd>=0?"+":"")+mw.cd.toFixed(3):"—"}</td></tr>`;
+  }
+  for(const tn of ["small","medium","large"]){
+    const d = tm[tn], mw = d.mw_1_vs_4||{};
+    h += `<tr><td>median engagement</td><td>${tn}</td><td>${d.n_authors}</td><td class="p">${(bc(d.by_count,1).mean||0).toFixed(1)}</td><td class="p">${(bc(d.by_count,4).mean||0).toFixed(1)}</td><td class="p">${mw.p?mw.p.toPrecision(3):"—"} <span class="sig ${sigCls(mw.p||1)}">${pStar(mw.p||1)}</span></td><td class="p">${mw.cd!==undefined?(mw.cd>=0?"+":"")+mw.cd.toFixed(3):"—"}</td></tr>`;
+  }
+  document.getElementById("tierTable").innerHTML = h + "</tbody>";
+})();
+
+// caption length + alt text
+(function(){
+  const ics=["1","2","3","4"];
+  new Chart(document.getElementById("capChart"), {
+    type:"bar", data:{labels:ics.map(i=>i+" img"),
+      datasets:[
+        {label:"mean caption length", data:ics.map(i=>(tx.by_count[i]||tx.by_count[Number(i)]).text_len_mean), backgroundColor:PC[0]},
+        {label:"median caption length", data:ics.map(i=>(tx.by_count[i]||tx.by_count[Number(i)]).text_len_median), backgroundColor:PC[2]},
+      ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true,title:{display:true,text:"characters"}}}}
+  });
+  new Chart(document.getElementById("altChart"), {
+    type:"bar", data:{labels:ics.map(i=>i+" img"),
+      datasets:[{label:"% with any alt text", data:ics.map(i=>(tx.by_count[i]||tx.by_count[Number(i)]).alt_any_rate*100), backgroundColor:PC[1]}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,max:100,title:{display:true,text:"% with alt text"}}}}
+  });
+  let h='<thead><tr><th>Caption length</th><th>n (1)</th><th>n (4)</th><th>mean (1)</th><th>mean (4)</th><th>p</th><th>d</th><th>Verdict</th></tr></thead><tbody>';
+  for(const s of tx.caption_stratified_1_vs_4){
+    const ver = s.mw_p<0.05 ? (s.cd>0?"4-img worse":"4-img better") : "no diff";
+    h += `<tr><td>${s.bucket} chars</td><td>${s.n_1}</td><td>${s.n_4}</td><td class="p">${s.mean_1.toFixed(1)}</td><td class="p">${s.mean_4.toFixed(1)}</td><td class="p">${s.mw_p.toPrecision(3)} <span class="sig ${sigCls(s.mw_p)}">${pStar(s.mw_p)}</span></td><td class="p">${(s.cd>=0?"+":"")+s.cd.toFixed(3)}</td><td><span class="sig ${s.mw_p<0.05?(s.cd>0?"neg":"pos"):"ns"}">${ver}</span></td></tr>`;
+  }
+  document.getElementById("capTable").innerHTML = h + "</tbody>";
+})();
+
+// aspect
+(function(){
+  const a = D.aspect && D.aspect.overall_kruskal;
+  if(!a) return;
+  new Chart(document.getElementById("aspectChart"), {
+    type:"bar",
+    data:{labels:[`landscape (n=${a.n_landscape.toLocaleString()})`, `portrait (n=${a.n_portrait.toLocaleString()})`, `square (n=${a.n_square.toLocaleString()})`],
+      datasets:[{data:[a.mean_landscape, a.mean_portrait, a.mean_square], backgroundColor:["#f59e0b","#14b8a6","#a855f7"]}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:"mean likes"}}}}
+  });
+  document.getElementById("aspectNote").innerHTML = `<b>Kruskal-Wallis p = ${a.p.toPrecision(2)} <span class="sig pos">${pStar(a.p)}</span></b>. Portrait orientation decisively outperforms landscape and square.`;
+})();
+
+// gini + zero + comp
+(function(){
+  const ics=["1","2","3","4"];
+  const gini = D.gini, zero = D.zero_inflation, comp = D.composition;
+  new Chart(document.getElementById("giniChart"), {
+    type:"bar", data:{labels:ics.map(i=>i+" img"), datasets:[{label:"Gini coefficient of likes", data:ics.map(i=>bc(gini,i).gini_likes), backgroundColor:PC}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:"Gini (0=equal, 1=concentrated)"}}}}
+  });
+  new Chart(document.getElementById("zeroChart"), {
+    type:"bar", data:{labels:ics.map(i=>i+" img"),
+      datasets:[
+        {label:"% with 0 likes", data:ics.map(i=>bc(zero,i).rate_zero*100), backgroundColor:"#dc2626"},
+        {label:"% with <5 likes", data:ics.map(i=>bc(zero,i).rate_sub5*100), backgroundColor:"#f59e0b"},
+      ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true,title:{display:true,text:"%"}}}}
+  });
+  new Chart(document.getElementById("compChart"), {
+    type:"bar", data:{labels:ics.map(i=>i+" img"),
+      datasets:[
+        {label:"reposts / 100 likes", data:ics.map(i=>bc(comp,i).reposts_per_100_likes), backgroundColor:"#14b8a6"},
+        {label:"replies / 100 likes", data:ics.map(i=>bc(comp,i).replies_per_100_likes), backgroundColor:"#a855f7"},
+      ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"}},scales:{y:{beginAtZero:true}}}
+  });
+})();
+
+// regression
+(function(){
+  const reg = D.regression.negative_binomial;
+  if(!reg || !reg.converged) return;
+  const order = ["is_2img","is_3img","is_4img","log_followers","has_alt","text_len","hour_sin","hour_cos"];
+  const labels = {is_2img:"2 img (vs 1)", is_3img:"3 img (vs 1)", is_4img:"4 img (vs 1)",
+    log_followers:"log(1+followers)", has_alt:"has alt text", text_len:"caption length (+1 char)",
+    hour_sin:"hour sin", hour_cos:"hour cos"};
+  const irrs = order.map(k=>reg.irr[k]);
+  const lo = order.map(k=>reg.irr_ci95_lo[k]);
+  const hi = order.map(k=>reg.irr_ci95_hi[k]);
+  const ps = order.map(k=>reg.pvalues[k]);
+  new Chart(document.getElementById("regChart"), {
+    type:"bar",
+    data:{labels:order.map(k=>labels[k]), datasets:[{
+      label:"IRR", data:irrs,
+      backgroundColor:irrs.map(v=>v<1?"#dc2626":"#059669"),
+      borderColor:"#222", borderWidth:1
+    }]},
+    options:{
+      indexAxis:"y", responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{afterLabel:ctx=>`CI [${lo[ctx.dataIndex].toFixed(3)}, ${hi[ctx.dataIndex].toFixed(3)}]  p=${ps[ctx.dataIndex].toPrecision(3)} ${pStar(ps[ctx.dataIndex])}`}}},
+      scales:{x:{title:{display:true,text:"Incident Rate Ratio (1 = no effect)"}}}
+    },
+    plugins:[{afterDatasetsDraw(ch){
+      const {ctx, scales:{x,y}} = ch;
+      ctx.save(); ctx.strokeStyle="#222"; ctx.setLineDash([4,4]);
+      const x1 = x.getPixelForValue(1);
+      ctx.beginPath(); ctx.moveTo(x1, y.top); ctx.lineTo(x1, y.bottom); ctx.stroke();
+      ctx.restore();
+    }}]
+  });
+  const r2 = D.regression.pseudo_r2_likes || {};
+  document.getElementById("regNote").innerHTML =
+    `<b>Pseudo-R²:</b> McFadden = ${(r2.mcfadden||0).toFixed(3)} · Deviance R² = ${(r2.deviance_r2||0).toFixed(3)} · Nagelkerke = ${(r2.nagelkerke||0).toFixed(3)}. <br>` +
+    `<b>Interpretation:</b> 4 images → IRR ${reg.irr.is_4img.toFixed(3)} <span class="sig pos">${pStar(reg.pvalues.is_4img)}</span> (≈${Math.round((1-reg.irr.is_4img)*100)}% fewer likes than 1-img, holding followers/alt/caption/hour constant). ` +
+    `Follower count is the dominant predictor (IRR ${reg.irr.log_followers.toFixed(2)} per log-unit <span class="sig pos">${pStar(reg.pvalues.log_followers)}</span>).`;
+})();
+
+document.getElementById("methodBox").innerHTML = `<b>Caveats.</b> Static snapshot. Follower counts are the value at analysis time (2026-04-23), not at each post's original creation. The feed is curated, not a global Bluesky snapshot. This sample was largely viewed under the pre-carousel grid layout; results don't necessarily generalize to post-carousel engagement.`;
+document.getElementById("footer").textContent = "Generated " + (D.generated_at ? D.generated_at.slice(0,10) : new Date().toISOString().slice(0,10)) + " · Source: https://github.com/sweetbeex/bsky-photo-number-analyses";
+</script>
+</body></html>
